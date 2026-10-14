@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  BOOKED
+  COMPLETED
+  CANCELLED
+}
+
+enum OcrStatus {
+  UPLOADED
+  PROCESSING
+  NEEDS_REVIEW
+  VERIFIED
+  REJECTED
+  FAILED
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String
+  name          String
+  role          Role
+  specialty     String?
+  department    String?
+  createdAt     DateTime     @default(now())
+  patientRecords MedicalRecord[] @relation("PatientRecords")
+  doctorRecords  MedicalRecord[] @relation("DoctorRecords")
+  reviewedOcr    OcrVerification[]
+  patientAppointments Appointment[] @relation("PatientAppointments")
+  doctorAppointments  Appointment[] @relation("DoctorAppointments")
+  patientPrescriptions Prescription[] @relation("PrescriptionPatient")
+  authoredPrescriptions Prescription[] @relation("PrescriptionDoctor")
+  sessions      Session[]
+  ocrJobs       OcrJob[]
+  auditEvents   AuditLog[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model Appointment {
+  id        String            @id @default(cuid())
+  patientId String
+  doctorId  String
+  startsAt  DateTime
+  reason    String
+  status    AppointmentStatus @default(BOOKED)
+  createdAt DateTime          @default(now())
+  patient   User              @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor    User              @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  @@index([patientId, startsAt])
+  @@index([doctorId, startsAt])
+}
+
+model MedicalRecord {
+  id        String   @id @default(cuid())
+  patientId String
+  doctorId  String?
+  title     String
+  category  String
+  summary   String
+  recordedAt DateTime @default(now())
+  patient   User     @relation("PatientRecords", fields: [patientId], references: [id])
+  doctor    User?    @relation("DoctorRecords", fields: [doctorId], references: [id])
+  @@index([patientId, recordedAt])
+}
+
+model OcrJob {
+  id         String    @id @default(cuid())
+  patientId  String
+  uploaderId String
+  fileName   String
+  mimeType   String
+  status     OcrStatus @default(UPLOADED)
+  demo       Boolean   @default(true)
+  fieldsJson String
+  filePath   String?
+  requestKey String?   @unique
+  createdAt  DateTime  @default(now())
+  reviewerId String?
+  reviewedAt DateTime?
+  user       User      @relation(fields: [uploaderId], references: [id])
+  verifications OcrVerification[]
+  @@index([patientId, createdAt])
+}
+
+model OcrVerification {
+  id         String   @id @default(cuid())
+  ocrJobId   String
+  reviewerId String
+  decision   String
+  fieldsJson String
+  createdAt  DateTime @default(now())
+  ocrJob     OcrJob   @relation(fields: [ocrJobId], references: [id], onDelete: Cascade)
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+  @@index([ocrJobId, createdAt])
+}
+
+model Prescription {
+  id          String   @id @default(cuid())
+  patientId   String
+  doctorId    String
+  title       String
+  itemsJson   String
+  status      String   @default("FINALIZED")
+  createdAt   DateTime @default(now())
+  finalizedAt DateTime @default(now())
+  patient     User     @relation("PrescriptionPatient", fields: [patientId], references: [id])
+  doctor      User     @relation("PrescriptionDoctor", fields: [doctorId], references: [id])
+  @@index([patientId, createdAt])
+}
+
+model FollowUp {
+  id        String   @id @default(cuid())
+  patientId String
+  doctorId  String
+  title     String
+  dueAt     DateTime
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@index([patientId, dueAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  resource  String
+  resourceId String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [actorId], references: [id])
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
